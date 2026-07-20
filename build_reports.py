@@ -13,10 +13,9 @@ OUTPUT_DIR.mkdir(exist_ok=True)
 STOPWORDS = {
     "그리고", "하지만", "그래서", "이렇게", "저희", "저는", "우리", "이제", "정말",
     "너무", "같은", "같아요", "같고", "이런", "그런", "그렇", "해서", "하면",
-    "있고", "있어요", "있습니다", "해서", "하니", "하니까", "또한", "혹시",
-    "이번", "앞서", "때문", "정도", "제가", "저도", "이상", "아래", "이후",
-    "동안", "진짜", "정말", "보고", "보니", "보면", "한번", "하게", "되어",
-    "가장", "더욱", "이상", "이후", "이전", "이때", "그때", "지금", "앞으로"
+    "있고", "있어요", "있습니다", "하니", "하니까", "또한", "혹시", "이번", "앞서",
+    "때문", "정도", "제가", "저도", "이상", "아래", "이후", "동안", "진짜", "보고",
+    "보니", "보면", "한번", "하게", "되어", "가장", "더욱", "이때", "그때", "지금", "앞으로"
 }
 
 
@@ -87,7 +86,7 @@ def deduplicate(rows):
     return unique_rows
 
 
-def preview_text(text: str, length: int = 140) -> str:
+def preview_text(text: str, length: int = 180) -> str:
     text = normalize_text(text)
     if len(text) <= length:
         return text
@@ -99,42 +98,65 @@ def tokenize(text: str):
     return [token for token in tokens if len(token) > 1 and token not in STOPWORDS]
 
 
+def join_values(value):
+    if isinstance(value, (list, tuple, set)):
+        return ", ".join(str(item) for item in value if item)
+    return str(value or "")
+
+
 def write_csv(rows, path: Path):
-    fieldnames = ["source", "topic", "title", "url", "external_id", "incentivized_review", "preview"]
+    fieldnames = [
+        "source",
+        "research_use",
+        "analysis_tier",
+        "service_categories",
+        "issue_labels",
+        "price_mentions",
+        "direct_experience",
+        "is_repost",
+        "title",
+        "evidence",
+        "url",
+    ]
     with path.open("w", encoding="utf-8-sig", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
             writer.writerow({
                 "source": row.get("source", ""),
-                "topic": row.get("topic", ""),
+                "research_use": row.get("research_use", ""),
+                "analysis_tier": row.get("analysis_tier", ""),
+                "service_categories": join_values(row.get("service_categories", [])),
+                "issue_labels": join_values(row.get("issue_labels", [])),
+                "price_mentions": join_values(row.get("price_mentions", [])),
+                "direct_experience": row.get("direct_experience", False),
+                "is_repost": row.get("is_repost", False),
                 "title": row.get("title", ""),
+                "evidence": " / ".join(row.get("evidence_sentences", [])),
                 "url": row.get("url", ""),
-                "external_id": row.get("external_id", ""),
-                "incentivized_review": row.get("incentivized_review", False),
-                "preview": preview_text(row.get("body", "")),
             })
 
 
 def write_html(rows, path: Path):
     source_counts = Counter(row.get("source", "unknown") for row in rows)
-    topic_counts = Counter(row.get("topic", "general") for row in rows)
+    research_use_counts = Counter(row.get("research_use", "exclude") for row in rows)
 
     summary_cards = []
     for name, count in source_counts.items():
         summary_cards.append(f"<div class='card'><h3>{escape(name)}</h3><p>{count}</p></div>")
-    for name, count in topic_counts.items():
+    for name, count in research_use_counts.items():
         summary_cards.append(f"<div class='card'><h3>{escape(name)}</h3><p>{count}</p></div>")
 
     rows_html = []
     for row in rows:
         title = escape(row.get("title", ""))
-        preview = escape(preview_text(row.get("body", "")))
+        evidence = escape(preview_text(" / ".join(row.get("evidence_sentences", []))))
         url = row.get("url", "")
         source = escape(row.get("source", ""))
-        topic = escape(row.get("topic", ""))
+        research_use = escape(row.get("research_use", ""))
+        analysis_tier = escape(row.get("analysis_tier", ""))
         rows_html.append(
-            f"<tr><td>{source}</td><td>{topic}</td><td><a href='{escape(url)}' target='_blank'>{title}</a></td><td>{preview}</td></tr>"
+            f"<tr><td>{source}</td><td>{research_use}</td><td>{analysis_tier}</td><td><a href='{escape(url)}' target='_blank'>{title}</a></td><td>{evidence}</td></tr>"
         )
 
     html = f"""<!DOCTYPE html>
@@ -158,15 +180,15 @@ def write_html(rows, path: Path):
   <h1>웨딩 크롤링 결과 요약</h1>
   <p>총 {len(rows)}건의 항목을 정리했습니다.</p>
   <div class='links'>
-    <a href='topic_clusters.html'>주제별 클러스터링 보기</a> |
-    <a href='keyword_frequency.html'>키워드 빈도 보기</a>
+    <a href='issue_groups.html'>이슈 그룹 보기</a> |
+    <a href='keyword_frequency.html'>근거 문장 키워드 보기</a>
   </div>
   <div class='summary'>
     {''.join(summary_cards)}
   </div>
   <table>
     <thead>
-      <tr><th>출처</th><th>주제</th><th>제목</th><th>미리보기</th></tr>
+      <tr><th>출처</th><th>연구용도</th><th>등급</th><th>제목</th><th>근거</th></tr>
     </thead>
     <tbody>
       {''.join(rows_html)}
@@ -178,24 +200,35 @@ def write_html(rows, path: Path):
     path.write_text(html, encoding="utf-8")
 
 
-def write_topic_clusters(rows, path: Path):
+def group_by_issue(rows):
     grouped = {}
-    for row in rows:
-        topic = row.get("topic", "general")
-        grouped.setdefault(topic, []).append(row)
 
+    for row in rows:
+        for issue in row.get("issue_labels", []):
+            grouped.setdefault(issue, []).append(row)
+
+    return grouped
+
+
+def write_issue_groups(rows, path: Path):
+    grouped = group_by_issue(rows)
     sections = []
-    for topic, group in sorted(grouped.items()):
-        token_counter = Counter()
-        for row in group:
-            token_counter.update(tokenize(f"{row.get('title', '')} {row.get('body', '')}"))
-        top_keywords = token_counter.most_common(8)
-        examples = [escape(row.get("title", "")) for row in group[:5]]
+
+    for issue, group in sorted(grouped.items()):
+        direct_count = sum(1 for row in group if row.get("direct_experience"))
+        repost_count = sum(1 for row in group if row.get("is_repost"))
+        price_mentions = sorted({item for row in group for item in row.get("price_mentions", [])})
+        evidence_items = []
+        for row in group[:3]:
+            evidence_items.extend(row.get("evidence_sentences", []))
+
         sections.append(
             "<section class='cluster'>"
-            f"<h2>{escape(topic)}</h2>"
-            f"<p>건수: {len(group)} | 대표키워드: {', '.join(f'{k}({c})' for k, c in top_keywords)}</p>"
-            f"<ul><li>{'</li><li>'.join(examples)}</li></ul>"
+            f"<h2>{escape(issue)}</h2>"
+            f"<p>사례 수: {len(group)} | 직접 경험 수: {direct_count} | 재게시물 수: {repost_count}</p>"
+            f"<p>언급된 가격: {escape(', '.join(price_mentions))}</p>"
+            f"<ul>{''.join(f'<li>{escape(item)}</li>' for item in evidence_items[:5])}</ul>"
+            f"<p>{' '.join(f'<a href="{escape(row.get("url", ""))}" target="_blank">원문 링크</a>' for row in group[:3])}</p>"
             "</section>"
         )
 
@@ -203,7 +236,7 @@ def write_topic_clusters(rows, path: Path):
 <html lang='ko'>
 <head>
   <meta charset='utf-8' />
-  <title>주제별 클러스터링</title>
+  <title>이슈 그룹</title>
   <style>
     body {{ font-family: Arial, sans-serif; margin: 24px; color: #222; }}
     .cluster {{ border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 14px; }}
@@ -212,7 +245,7 @@ def write_topic_clusters(rows, path: Path):
   </style>
 </head>
 <body>
-  <h1>주제별 클러스터링</h1>
+  <h1>이슈 그룹</h1>
   <p><a href='wedding_crawling_summary.html'>요약 보기</a></p>
   {''.join(sections)}
 </body>
@@ -224,7 +257,8 @@ def write_topic_clusters(rows, path: Path):
 def write_keyword_frequency(rows, path: Path):
     counter = Counter()
     for row in rows:
-        counter.update(tokenize(f"{row.get('title', '')} {row.get('body', '')}"))
+        evidence = " ".join(row.get("evidence_sentences", []))
+        counter.update(tokenize(evidence))
 
     max_count = max(counter.values()) if counter else 1
     items = []
@@ -238,7 +272,7 @@ def write_keyword_frequency(rows, path: Path):
 <html lang='ko'>
 <head>
   <meta charset='utf-8' />
-  <title>키워드 빈도</title>
+  <title>근거 문장 키워드</title>
   <style>
     body {{ font-family: Arial, sans-serif; margin: 24px; color: #222; }}
     .row {{ margin-bottom: 10px; }}
@@ -249,7 +283,7 @@ def write_keyword_frequency(rows, path: Path):
   </style>
 </head>
 <body>
-  <h1>키워드 빈도</h1>
+  <h1>근거 문장 키워드</h1>
   <p><a href='wedding_crawling_summary.html'>요약 보기</a></p>
   {''.join(items)}
 </body>
@@ -261,17 +295,35 @@ def write_keyword_frequency(rows, path: Path):
 def main():
     rows = load_rows()
     rows = deduplicate(rows)
-    rows = sorted(rows, key=lambda r: (r.get("source", ""), r.get("title", "")))
+
+    valid_rows = [
+        row for row in rows
+        if row.get("keep") is True
+    ]
+
+    core_rows = [
+        row for row in valid_rows
+        if row.get("research_use")
+        in {"core_problem", "planner_workflow"}
+    ]
+
+    rows = sorted(
+        core_rows,
+        key=lambda row: (
+            row.get("research_use", ""),
+            row.get("title", ""),
+        ),
+    )
 
     write_csv(rows, OUTPUT_DIR / "wedding_crawling_summary.csv")
     write_html(rows, OUTPUT_DIR / "wedding_crawling_summary.html")
-    write_topic_clusters(rows, OUTPUT_DIR / "topic_clusters.html")
+    write_issue_groups(rows, OUTPUT_DIR / "issue_groups.html")
     write_keyword_frequency(rows, OUTPUT_DIR / "keyword_frequency.html")
 
     print(f"Saved {len(rows)} rows to reports")
     print(f"CSV: {OUTPUT_DIR / 'wedding_crawling_summary.csv'}")
     print(f"HTML: {OUTPUT_DIR / 'wedding_crawling_summary.html'}")
-    print(f"Clusters: {OUTPUT_DIR / 'topic_clusters.html'}")
+    print(f"Issues: {OUTPUT_DIR / 'issue_groups.html'}")
     print(f"Keywords: {OUTPUT_DIR / 'keyword_frequency.html'}")
 
 

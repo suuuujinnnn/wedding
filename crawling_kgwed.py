@@ -1,6 +1,7 @@
 import hashlib
 import json
 import random
+import re
 import time
 from urllib import robotparser
 from urllib.parse import parse_qs, urljoin, urlparse
@@ -9,6 +10,8 @@ import requests
 from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+
+from quality_rules import analyze_post
 
 
 USER_AGENT = (
@@ -35,20 +38,6 @@ KGWED_BASE_URL = "https://kgwed.com"
 KGWED_REVIEW_URL = f"{KGWED_BASE_URL}/%ED%9B%84%EA%B8%B0/"
 KGWED_LIST_URL = f"{KGWED_BASE_URL}/index.php"
 
-DISCOVERY_KEYWORDS = [
-    "후기", "리뷰", "이용후기", "실제후기", "고객후기",
-    "가격", "비용", "견적", "추가금", "계약",
-    "환불", "취소", "상담", "업체", "서비스",
-]
-
-TOPIC_KEYWORDS = {
-    "price_transparency": ["가격", "비용", "견적", "추가금", "투명"],
-    "conflict": ["갈등", "분쟁", "불만", "스트레스", "싸움"],
-    "planner_contract": ["플래너", "계약", "상담", "예약", "일정"],
-    "service_review": ["서비스", "업체", "후기", "평가", "추천"],
-    "refund": ["환불", "취소", "보상", "환불요청"],
-}
-
 
 def robots_allowed(url: str) -> bool:
     parsed = urlparse(url)
@@ -72,7 +61,7 @@ def fetch_soup(url: str) -> BeautifulSoup | None:
 
     time.sleep(random.uniform(3, 6))
 
-    response = session.get(url, timeout=20, verify=False)
+    response = session.get(url, timeout=20)
 
     if response.status_code in {403, 429}:
         print(f"[ACCESS BLOCKED] {response.status_code}: {url}")
@@ -98,50 +87,41 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def normalize_text(text: str) -> str:
-    return " ".join(text.replace("\n", " ").split()).lower()
-
-
-def relevant_title(title: str) -> bool:
-    normalized = title.replace(" ", "")
-    if not normalized:
-        return False
-    if any(keyword.replace(" ", "") in normalized for keyword in DISCOVERY_KEYWORDS):
-        return True
-    lowered = normalized.lower()
-    return any(token in lowered for token in ["후기", "review", "리뷰"])
-
-
-def classify_topic(title: str, body: str) -> str:
-    text = normalize_text(f"{title} {body}")
-    for topic, keywords in TOPIC_KEYWORDS.items():
-        if any(keyword in text for keyword in keywords):
-            return topic
-    return "general"
-
-
 def get_kgwed_article_links(max_pages: int = 5) -> list[str]:
-    links = set()
+    links = {}
 
-    for review_url in [KGWED_REVIEW_URL, f"{KGWED_BASE_URL}/%ed%9b%84%ea%b8%b0/"]:
-        soup = fetch_soup(review_url)
+    for page in range(1, max_pages + 1):
+        url = (
+            f"{KGWED_REVIEW_URL}"
+            f"?mod=list&pageid={page}"
+        )
+
+        soup = fetch_soup(url)
+
         if soup is None:
-            continue
-
-        for anchor in soup.select('a[href]'):
-            href = anchor.get("href", "")
-            title = clean_text(anchor)
-            if not href:
-                continue
-            if "후기" in title or "리뷰" in title or "review" in href.lower():
-                resolved = urljoin(review_url, href)
-                if resolved.startswith(KGWED_BASE_URL) and resolved != review_url:
-                    links.add(resolved)
-
-        if links:
             break
 
-    return sorted(links)
+        for anchor in soup.select(
+            'a[href*="mod=document"][href*="uid="]'
+        ):
+            href = urljoin(
+                KGWED_REVIEW_URL,
+                anchor.get("href", ""),
+            )
+
+            uid = parse_qs(
+                urlparse(href).query
+            ).get("uid", [""])[0]
+
+            if not uid:
+                continue
+
+            links[uid] = (
+                f"{KGWED_REVIEW_URL}"
+                f"?mod=document&uid={uid}"
+            )
+
+    return list(links.values())
 
 
 def parse_kgwed_article(url: str) -> dict | None:
@@ -150,12 +130,27 @@ def parse_kgwed_article(url: str) -> dict | None:
     if soup is None:
         return None
 
-    title_node = soup.select_one(
-        "h1, .entry-title, .post-title, .title, .wp-block-post-title"
+    document = soup.select_one(
+        ".kboard-document-wrap"
     )
-    body_node = soup.select_one(
-        "article, .entry-content, .post-content, .content, .post"
+
+    if document is None:
+        print(f"[KBOARD DOCUMENT NOT FOUND] {url}")
+        return None
+
+    title_node = document.select_one(
+        ".kboard-title h1, "
+        ".kboard-title"
     )
+
+    body_node = document.select_one(
+        ".kboard-content .content-view, "
+        ".content-view"
+    )
+
+    if title_node is None or body_node is None:
+        print(f"[CONTENT SELECTOR FAILED] {url}")
+        return None
 
     title = clean_text(title_node)
     body = clean_text(body_node)
@@ -163,21 +158,41 @@ def parse_kgwed_article(url: str) -> dict | None:
     if not title or len(body) < 30:
         return None
 
-    if title.startswith("Re:"):
+    if title.strip().startswith("Re:"):
         return None
 
-    uid = parse_qs(urlparse(url).query).get("uid", [""])[0]
+    if re.match(r"^Re:", body.strip()):
+        return None
+
+    if "상품권 증정 이벤트" in title:
+        return None
+
+    if "상품권 증정 이벤트" in body[:200]:
+        return None
+
+    uid = parse_qs(
+        urlparse(url).query
+    ).get("uid", [""])[0]
+
+    analysis = analyze_post(
+        title=title,
+        body=body,
+        source="kgwed",
+    )
 
     return {
         "source": "kgwed",
-        "source_type": "vendor",
-        "external_id": uid or url,
+        "source_type": "vendor_review_board",
+        "external_id": uid,
         "url": url,
-        "title": title,
-        "body": body,
-        "topic": classify_topic(title, body),
-        "content_hash": content_hash(title + body),
-        "incentivized_review": True,
+        "content_hash": content_hash(
+            analysis["title"]
+            + analysis["body_clean"]
+        ),
+        "incentivized_review": None,
+        "incentive_program_present": True,
+        "source_bias": "vendor_operated_review_board",
+        **analysis,
     }
 
 

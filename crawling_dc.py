@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from quality_rules import analyze_post, is_candidate_title
+
 
 USER_AGENT = (
     "WeddingMarketResearchBot/0.1 "
@@ -34,30 +36,6 @@ session.mount("https://", HTTPAdapter(max_retries=retry))
 DC_LIST_URL = "https://gall.dcinside.com/board/lists/"
 DC_GALLERY_ID = "wedding"
 
-DISCOVERY_KEYWORDS = [
-    "가격", "비용", "견적", "추가금", "추가 비용", "추가비용",
-    "환불", "취소", "계약", "상담", "플래너", "후기", "리뷰",
-    "불만", "사기", "실패", "실망", "비싸", "예산"
-]
-
-CONTEXT_KEYWORDS = [
-    "웨딩", "결혼", "결혼식", "예식", "예식장", "스드메", "업체",
-    "신혼", "혼수", "촬영", "드레스", "메이크업", "플래너"
-]
-
-EXCLUDE_TERMS = [
-    "청소업체직원", "연애상담", "노괴", "도축제도",
-    "이혼", "부동산계약", "전세계약", "혼인취소"
-]
-
-TOPIC_KEYWORDS = {
-    "price_transparency": ["가격", "비용", "견적", "추가금", "투명"],
-    "conflict": ["갈등", "분쟁", "불만", "스트레스", "싸움"],
-    "planner_contract": ["플래너", "계약", "상담", "예약", "일정"],
-    "service_review": ["서비스", "업체", "후기", "평가", "추천"],
-    "refund": ["환불", "취소", "보상", "환불요청"],
-}
-
 
 def robots_allowed(url: str) -> bool:
     parsed = urlparse(url)
@@ -80,7 +58,7 @@ def fetch_soup(url: str) -> BeautifulSoup | None:
 
     time.sleep(random.uniform(3, 6))
 
-    response = session.get(url, timeout=20, verify=False)
+    response = session.get(url, timeout=20)
 
     if response.status_code in {403, 429}:
         print(f"[ACCESS BLOCKED] {response.status_code}: {url}")
@@ -106,40 +84,8 @@ def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def normalize_text(text: str) -> str:
-    return " ".join(text.replace("\n", " ").split()).lower()
-
-
 def relevant_title(title: str) -> bool:
-    text = normalize_text(title)
-    if not text:
-        return False
-    if any(term in text for term in EXCLUDE_TERMS):
-        return False
-
-    has_context = any(term in text for term in CONTEXT_KEYWORDS)
-    has_target = any(term in text for term in DISCOVERY_KEYWORDS)
-    return has_context and has_target
-
-
-def relevant_article(title: str, body: str) -> bool:
-    text = normalize_text(f"{title} {body}")
-    if not text:
-        return False
-    if any(term in text for term in EXCLUDE_TERMS):
-        return False
-
-    has_context = any(term in text for term in CONTEXT_KEYWORDS)
-    has_target = any(term in text for term in DISCOVERY_KEYWORDS)
-    return has_context and has_target
-
-
-def classify_topic(title: str, body: str) -> str:
-    text = normalize_text(f"{title} {body}")
-    for topic, keywords in TOPIC_KEYWORDS.items():
-        if any(keyword in text for keyword in keywords):
-            return topic
-    return "general"
+    return is_candidate_title(title)
 
 
 def get_dc_article_links(max_pages: int = 30) -> list[str]:
@@ -185,21 +131,30 @@ def parse_dc_article(url: str) -> dict | None:
     if not title or len(body) < 20:
         return None
 
-    if not relevant_article(title, body):
+    analysis = analyze_post(
+        title=title,
+        body=body,
+        source="dcinside",
+    )
+
+    if not analysis["keep"]:
         return None
 
-    post_no = parse_qs(urlparse(url).query).get("no", [""])[0]
+    post_no = parse_qs(
+        urlparse(url).query
+    ).get("no", [""])[0]
 
     return {
         "source": "dcinside",
         "source_type": "community",
         "external_id": post_no,
         "url": url,
-        "title": title,
-        "body": body,
-        "topic": classify_topic(title, body),
-        "content_hash": content_hash(title + body),
+        "content_hash": content_hash(
+            analysis["title"]
+            + analysis["body_clean"]
+        ),
         "incentivized_review": False,
+        **analysis,
     }
 
 
