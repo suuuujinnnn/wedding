@@ -1,20 +1,233 @@
 <!DOCTYPE html>
-<html lang='ko'>
+<html lang="ko">
 <head>
-  <meta charset='utf-8' />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>근거 문장 키워드</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 24px; color: #222; }
-    .row { margin-bottom: 10px; }
-    .label { margin-bottom: 4px; font-weight: 600; }
-    .bar { height: 12px; background: #eee; border-radius: 6px; overflow: hidden; }
-    .fill { height: 100%; background: #1a73e8; }
-    a { color: #1a73e8; text-decoration: none; }
+    :root {
+      --bg: #f5f7fb;
+      --surface: #ffffff;
+      --surface-alt: #f8faff;
+      --text: #172033;
+      --muted: #667085;
+      --line: #dde4f0;
+      --accent: #3657d6;
+      --accent-2: #8b5cf6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", Arial, sans-serif;
+      background: linear-gradient(180deg, #f8faff 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+    .page {
+      max-width: 1480px;
+      margin: 0 auto;
+      padding: 28px 20px 40px;
+    }
+    header {
+      margin-bottom: 18px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      letter-spacing: -0.02em;
+    }
+    .subtitle {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 12px;
+      margin: 22px 0;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px 16px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+    }
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 13px;
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .card p {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1;
+      font-weight: 800;
+      color: var(--text);
+    }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+    }
+    section h2 {
+      margin: 0 0 14px;
+      font-size: 20px;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 1180px;
+      background: white;
+    }
+    thead th {
+      position: sticky;
+      top: 0;
+      background: #edf2ff;
+      z-index: 1;
+    }
+    th, td {
+      border-bottom: 1px solid #e7ebf3;
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+      line-height: 1.5;
+    }
+    tbody tr:nth-child(even) {
+      background: #fbfcff;
+    }
+    .title-cell {
+      min-width: 280px;
+    }
+    .title-cell a {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    .title-cell a:hover {
+      text-decoration: underline;
+    }
+    .empty-state {
+      margin: 0;
+      color: var(--muted);
+    }
+    .cluster {
+      background: var(--surface-alt);
+      border: 1px solid #e4e9f7;
+      border-radius: 16px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .cluster-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .cluster-head h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+    .cluster-head span {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    .meta {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    ul {
+      margin: 10px 0 12px;
+      padding-left: 18px;
+    }
+    li {
+      margin-bottom: 6px;
+      line-height: 1.5;
+    }
+    .link-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .chip-link {
+      display: inline-flex;
+      align-items: center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: white;
+      border: 1px solid var(--line);
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .keyword-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 12px 16px;
+    }
+    .keyword-row {
+      padding: 12px 14px;
+      border: 1px solid #e7ebf3;
+      border-radius: 14px;
+      background: #fcfdff;
+    }
+    .keyword-label {
+      margin-bottom: 8px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .keyword-label span {
+      color: var(--muted);
+      font-weight: 600;
+    }
+    .bar {
+      height: 10px;
+      background: #e8edf5;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .fill {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    }
+    a {
+      color: var(--accent);
+    }
+    @media (max-width: 800px) {
+      .page {
+        padding: 18px 12px 30px;
+      }
+      h1 {
+        font-size: 24px;
+      }
+      section {
+        padding: 14px;
+      }
+    }
   </style>
 </head>
 <body>
-  <h1>근거 문장 키워드</h1>
-  <p><a href='wedding_crawling_summary.html'>요약 보기</a></p>
-  <div class='row'><div class='label'>드레스 (14)</div><div class='bar'><div class='fill' style='width:100%'></div></div></div><div class='row'><div class='label'>결혼식 (9)</div><div class='bar'><div class='fill' style='width:64%'></div></div></div><div class='row'><div class='label'>본식 (8)</div><div class='bar'><div class='fill' style='width:57%'></div></div></div><div class='row'><div class='label'>스튜디오 (7)</div><div class='bar'><div class='fill' style='width:50%'></div></div></div><div class='row'><div class='label'>했는데 (7)</div><div class='bar'><div class='fill' style='width:50%'></div></div></div><div class='row'><div class='label'>사실 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>드레스도 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>스드메 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>계약 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>많이 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>드레스를 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>있는 (6)</div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='row'><div class='label'>추가금 (5)</div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='row'><div class='label'>결직웨딩 (5)</div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='row'><div class='label'>원하는 (5)</div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='row'><div class='label'>모두 (5)</div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='row'><div class='label'>결혼 (5)</div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='row'><div class='label'>웨딩홀 (5)</div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='row'><div class='label'>아주 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>덕분에 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>맘에 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>웨딩 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>있어서 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>상담 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>있었습니다 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>결과물을 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>메이크업 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>드레스가 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>친절하시고 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>특히 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>드레스는 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>예쁘게 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>빠르게 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>끝났는데 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>추가금이라고요 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>앨범 (4)</div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='row'><div class='label'>마음에 (3)</div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='row'><div class='label'>엄청 (3)</div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='row'><div class='label'>직접 (3)</div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='row'><div class='label'>통해 (3)</div><div class='bar'><div class='fill' style='width:21%'></div></div></div>
+  <div class="page">
+    <header>
+      <h1>근거 문장 키워드</h1>
+      <p class="subtitle">근거 문장에서 반복되는 표현을 정리했습니다.</p>
+    </header>
+    <div class="summary"><div class='card'><h3>총 항목</h3><p>27</p></div><div class='card'><h3>디시인사이드</h3><p>2</p></div><div class='card'><h3>결직웨딩</h3><p>25</p></div><div class='card'><h3>core_problem</h3><p>26</p></div><div class='card'><h3>planner_workflow</h3><p>1</p></div><div class='card'><h3>등급 A</h3><p>8</p></div><div class='card'><h3>등급 C</h3><p>19</p></div></div>
+    <section><h2>키워드 빈도</h2><div class='keyword-list'><div class='keyword-row'><div class='keyword-label'>드레스 <span>(14)</span></div><div class='bar'><div class='fill' style='width:100%'></div></div></div><div class='keyword-row'><div class='keyword-label'>결혼식 <span>(9)</span></div><div class='bar'><div class='fill' style='width:64%'></div></div></div><div class='keyword-row'><div class='keyword-label'>본식 <span>(8)</span></div><div class='bar'><div class='fill' style='width:57%'></div></div></div><div class='keyword-row'><div class='keyword-label'>했는데 <span>(7)</span></div><div class='bar'><div class='fill' style='width:50%'></div></div></div><div class='keyword-row'><div class='keyword-label'>스튜디오 <span>(7)</span></div><div class='bar'><div class='fill' style='width:50%'></div></div></div><div class='keyword-row'><div class='keyword-label'>사실 <span>(6)</span></div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='keyword-row'><div class='keyword-label'>드레스도 <span>(6)</span></div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='keyword-row'><div class='keyword-label'>많이 <span>(6)</span></div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='keyword-row'><div class='keyword-label'>드레스를 <span>(6)</span></div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='keyword-row'><div class='keyword-label'>있는 <span>(6)</span></div><div class='bar'><div class='fill' style='width:42%'></div></div></div><div class='keyword-row'><div class='keyword-label'>추가금 <span>(5)</span></div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='keyword-row'><div class='keyword-label'>결직웨딩 <span>(5)</span></div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='keyword-row'><div class='keyword-label'>원하는 <span>(5)</span></div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='keyword-row'><div class='keyword-label'>모두 <span>(5)</span></div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='keyword-row'><div class='keyword-label'>웨딩홀 <span>(5)</span></div><div class='bar'><div class='fill' style='width:35%'></div></div></div><div class='keyword-row'><div class='keyword-label'>끝났는데 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>추가금이라고요 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>앨범 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>덕분에 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>맘에 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>있어서 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>있었습니다 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>결과물을 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>메이크업 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>드레스가 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>친절하시고 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>특히 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>드레스는 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>예쁘게 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>빠르게 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>해서 <span>(4)</span></div><div class='bar'><div class='fill' style='width:28%'></div></div></div><div class='keyword-row'><div class='keyword-label'>비용 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>사진을 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>과정에서 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>추가 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>마음에 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>엄청 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>같은 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>직접 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div><div class='keyword-row'><div class='keyword-label'>통해 <span>(3)</span></div><div class='bar'><div class='fill' style='width:21%'></div></div></div></div></section>
+  </div>
 </body>
 </html>

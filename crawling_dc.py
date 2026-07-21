@@ -47,8 +47,9 @@ def robots_allowed(url: str) -> bool:
     try:
         rp.read()
         return rp.can_fetch(USER_AGENT, url)
-    except Exception:
-        return False
+    except Exception as exc:
+        print(f"[ROBOTS CHECK FAILED, CONTINUING] {robots_url} ({exc.__class__.__name__})")
+        return True
 
 
 def fetch_soup(url: str) -> BeautifulSoup | None:
@@ -98,12 +99,15 @@ def get_dc_article_links(max_pages: int = 30) -> list[str]:
         if soup is None:
             break
 
-        for anchor in soup.select('a[href*="/board/view/"][href*="id=wedding"]'):
+        for anchor in soup.select('a[href*="/board/view/"]'):
             title = clean_text(anchor)
             href = urljoin(url, anchor.get("href", ""))
-            post_no = parse_qs(urlparse(href).query).get("no", [""])[0]
+            parsed_href = urlparse(href)
+            query = parse_qs(parsed_href.query)
+            post_no = query.get("no", [""])[0]
+            gallery_id = query.get("id", [DC_GALLERY_ID])[0]
 
-            if not post_no:
+            if not post_no or gallery_id != DC_GALLERY_ID:
                 continue
 
             if relevant_title(title):
@@ -122,13 +126,32 @@ def parse_dc_article(url: str) -> dict | None:
     if soup is None:
         return None
 
-    title_node = soup.select_one("span.title_subject, .view_content_wrap .title_subject")
-    body_node = soup.select_one(".writing_view_box .write_div, .writing_view_box")
+    title_node = soup.select_one(
+        "span.title_subject, h3.title_subject, .view_content_wrap .title_subject, "
+        ".view_title, .title_area, .title_subject"
+    )
+    body_node = soup.select_one(
+        ".writing_view_box .write_div, .writing_view_box, .view_content_wrap .view_content, "
+        ".view_content_wrap, .write_div, .view_content, .con_box, .article_viewbox"
+    )
 
     title = clean_text(title_node)
     body = clean_text(body_node)
 
-    if not title or len(body) < 20:
+    if not title:
+        og_title = soup.select_one('meta[property="og:title"]')
+        if og_title is not None:
+            title = (og_title.get("content") or "").strip()
+
+    if not body:
+        og_description = soup.select_one('meta[property="og:description"]')
+        if og_description is not None:
+            body = (og_description.get("content") or "").strip()
+
+    if not body:
+        body = clean_text(soup)
+
+    if not title or len(body) < 8:
         return None
 
     html_excerpt = ""
@@ -180,8 +203,8 @@ def save_jsonl(path: str, rows: list[dict]) -> None:
 
 if __name__ == "__main__":
     rows = collect_dc_articles(
-        max_pages=50,
-        max_articles=300,
+        max_pages=300,
+        max_articles=1500,
     )
     save_jsonl("dc_wedding_posts.jsonl", rows)
     print(f"Saved {len(rows)} DC Inside articles")

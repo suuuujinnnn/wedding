@@ -207,8 +207,8 @@ def save_jsonl(path: str, rows: list[dict]) -> None:
 
 if __name__ == "__main__":
     rows = collect_kgwed_articles(
-        max_pages=10,
-        max_articles=200,
+        max_pages=50,
+        max_articles=800,
     )
     save_jsonl("kgwed_posts.jsonl", rows)
     print(f"Saved {len(rows)} KGWED articles")

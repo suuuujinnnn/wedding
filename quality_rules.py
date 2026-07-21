@@ -180,25 +180,29 @@ def analyze_post(
 
     services = match_groups(text, SERVICE_KEYWORDS)
     issues = match_groups(text, ISSUE_KEYWORDS)
-    noise_hits = [
-        term for term in NOISE_TERMS
-        if term in text
+    context_terms = [
+        "웨딩", "결혼", "예식", "예식장", "스드메",
+        "플래너", "업체", "신혼", "혼수", "촬영",
+        "드레스", "메이크업", "앨범", "사진", "박람회"
     ]
-
+    has_context = any(term in text for term in context_terms)
+    price_hit = bool(PRICE_PATTERN.search(text))
     direct_experience = any(
         marker in text
         for marker in DIRECT_EXPERIENCE_MARKERS
     )
-
     is_repost = any(
         marker.lower() in text.lower()
         for marker in REPOST_MARKERS
     )
-
     has_preference = any(
         marker in text
         for marker in PREFERENCE_MARKERS
     )
+    noise_hits = [
+        term for term in NOISE_TERMS
+        if term in text
+    ]
 
     if noise_hits:
         research_use = "exclude"
@@ -211,12 +215,16 @@ def analyze_post(
             research_use = "core_problem"
         reject_reason = None
 
-    elif (
-        source == "kgwed"
-        and services
-        and has_preference
-    ):
+    elif issues or price_hit or direct_experience:
+        research_use = "core_problem"
+        reject_reason = None
+
+    elif source == "kgwed" and has_context and (services or has_preference):
         research_use = "vendor_preference"
+        reject_reason = None
+
+    elif source == "dcinside" and has_context and (services or price_hit or direct_experience):
+        research_use = "core_problem"
         reject_reason = None
 
     else:
