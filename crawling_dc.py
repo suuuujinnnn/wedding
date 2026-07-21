@@ -1,128 +1,80 @@
-import hashlib
 import json
-import random
-import time
-from urllib import robotparser
-from urllib.parse import parse_qs, urljoin, urlparse
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import urlencode, urljoin
 
-import requests
-from bs4 import BeautifulSoup
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-
+from crawler_utils import clean_text, content_hash, fetch_soup, query_value
 from quality_rules import analyze_post
 
 
-USER_AGENT = (
-    "WeddingMarketResearchBot/0.1 "
-    "(research purpose; contact: asd123@gmail.com)"
-)
-
-session = requests.Session()
-session.headers.update({
-    "User-Agent": USER_AGENT,
-    "Accept-Language": "ko-KR,ko;q=0.9",
-})
-
-retry = Retry(
-    total=2,
-    backoff_factor=2,
-    status_forcelist=[429, 500, 502, 503, 504],
-    allowed_methods=["GET"],
-)
-
-session.mount("https://", HTTPAdapter(max_retries=retry))
-
 DC_LIST_URL = "https://gall.dcinside.com/board/lists/"
 DC_GALLERY_ID = "wedding"
+SEARCH_TERMS = (
+    "웨딩홀",
+    "예식장",
+    "스드메",
+    "웨딩촬영",
+    "본식스냅",
+    "드레스",
+    "메이크업",
+    "플래너",
+    "추가금",
+    "견적",
+    "계약",
+    "환불",
+)
+SEARCH_PAGES_PER_TERM = 3
+ARTICLE_LIMIT = 300
 
 
-def robots_allowed(url: str) -> bool:
-    parsed = urlparse(url)
-    robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
+def get_dc_article_links(search_pages: int, stats: dict) -> list[str]:
+    links = {}
 
-    rp = robotparser.RobotFileParser()
-    rp.set_url(robots_url)
+    for keyword in SEARCH_TERMS:
+        for page in range(1, search_pages + 1):
+            query = urlencode(
+                {
+                    "id": DC_GALLERY_ID,
+                    "s_type": "search_subject_memo",
+                    "s_keyword": keyword,
+                    "page": page,
+                }
+            )
+            url = f"{DC_LIST_URL}?{query}"
+            stats["list_pages_attempted"] += 1
+            soup = fetch_soup(url)
 
-    try:
-        rp.read()
-        return rp.can_fetch(USER_AGENT, url)
-    except Exception as exc:
-        print(f"[ROBOTS CHECK FAILED, CONTINUING] {robots_url} ({exc.__class__.__name__})")
-        return True
+            if soup is None:
+                stats["list_pages_failed"] += 1
+                break
 
+            stats["list_pages_loaded"] += 1
+            links_before_page = len(links)
 
-def fetch_soup(url: str) -> BeautifulSoup | None:
-    if not robots_allowed(url):
-        print(f"[ROBOTS BLOCKED OR UNAVAILABLE] {url}")
-        return None
+            for anchor in soup.select('a[href*="/board/view/"]'):
+                href = urljoin(url, anchor.get("href", ""))
+                post_no = query_value(href, "no")
+                gallery_id = query_value(href, "id") or DC_GALLERY_ID
 
-    time.sleep(random.uniform(3, 6))
+                if not post_no or gallery_id != DC_GALLERY_ID:
+                    continue
 
-    response = session.get(url, timeout=20)
-
-    if response.status_code in {403, 429}:
-        print(f"[ACCESS BLOCKED] {response.status_code}: {url}")
-        return None
-
-    response.raise_for_status()
-    return BeautifulSoup(response.text, "html.parser")
-
-
-def clean_text(node) -> str:
-    if node is None:
-        return ""
-
-    for removable in node.select(
-        "script, style, iframe, form, nav, footer, .advertisement"
-    ):
-        removable.decompose()
-
-    return " ".join(node.get_text(" ", strip=True).split())
-
-
-def content_hash(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def relevant_title(title: str) -> bool:
-    return bool(title.strip())
-
-
-def get_dc_article_links(max_pages: int = 30) -> list[str]:
-    results = {}
-
-    for page in range(1, max_pages + 1):
-        url = f"{DC_LIST_URL}?id={DC_GALLERY_ID}&page={page}"
-        soup = fetch_soup(url)
-
-        if soup is None:
-            break
-
-        for anchor in soup.select('a[href*="/board/view/"]'):
-            title = clean_text(anchor)
-            href = urljoin(url, anchor.get("href", ""))
-            parsed_href = urlparse(href)
-            query = parse_qs(parsed_href.query)
-            post_no = query.get("no", [""])[0]
-            gallery_id = query.get("id", [DC_GALLERY_ID])[0]
-
-            if not post_no or gallery_id != DC_GALLERY_ID:
-                continue
-
-            if relevant_title(title):
-                canonical_url = (
+                links[post_no] = (
                     "https://gall.dcinside.com/board/view/"
                     f"?id={DC_GALLERY_ID}&no={post_no}"
                 )
-                results[post_no] = canonical_url
 
-    return list(results.values())
+            if page > 1 and len(links) == links_before_page:
+                break
+
+        print(f"[DC 목록] {keyword}: 누적 {len(links)}개 링크")
+
+    stats["discovered_links"] = len(links)
+    return list(links.values())
 
 
 def parse_dc_article(url: str) -> dict | None:
     soup = fetch_soup(url)
-
     if soup is None:
         return None
 
@@ -131,80 +83,100 @@ def parse_dc_article(url: str) -> dict | None:
         ".view_title, .title_area, .title_subject"
     )
     body_node = soup.select_one(
-        ".writing_view_box .write_div, .writing_view_box, .view_content_wrap .view_content, "
-        ".view_content_wrap, .write_div, .view_content, .con_box, .article_viewbox"
+        ".writing_view_box .write_div, .writing_view_box, "
+        ".view_content_wrap .view_content, .view_content_wrap, .write_div, "
+        ".view_content, .con_box, .article_viewbox"
     )
 
     title = clean_text(title_node)
     body = clean_text(body_node)
 
     if not title:
-        og_title = soup.select_one('meta[property="og:title"]')
-        if og_title is not None:
-            title = (og_title.get("content") or "").strip()
+        meta_title = soup.select_one('meta[property="og:title"]')
+        title = (meta_title.get("content") or "").strip() if meta_title else ""
 
     if not body:
-        og_description = soup.select_one('meta[property="og:description"]')
-        if og_description is not None:
-            body = (og_description.get("content") or "").strip()
-
-    if not body:
-        body = clean_text(soup)
+        meta_description = soup.select_one('meta[property="og:description"]')
+        body = (meta_description.get("content") or "").strip() if meta_description else ""
 
     if not title or len(body) < 8:
         return None
 
-    html_excerpt = ""
-    if body_node is not None:
-        html_excerpt = str(body_node)[:12000]
-
-    analysis = analyze_post(
-        title=title,
-        body=body,
-        source="dcinside",
-    )
-
-    post_no = parse_qs(
-        urlparse(url).query
-    ).get("no", [""])[0]
-
+    analysis = analyze_post(title=title, body=body, source="dcinside")
     return {
+        "record_type": "post",
         "source": "dcinside",
-        "source_type": "community",
-        "external_id": post_no,
+        "external_id": query_value(url, "no"),
         "url": url,
-        "html_excerpt": html_excerpt,
-        "content_hash": content_hash(
-            analysis["title"]
-            + analysis["body_clean"]
-        ),
-        "incentivized_review": False,
+        "content_hash": content_hash(analysis["title"] + analysis["body_clean"]),
         **analysis,
     }
 
 
-def collect_dc_articles(max_pages: int = 20, max_articles: int = 100) -> list[dict]:
-    article_urls = get_dc_article_links(max_pages=max_pages)
+def collect_dc_articles(
+    search_pages: int = SEARCH_PAGES_PER_TERM,
+    max_articles: int = ARTICLE_LIMIT,
+) -> tuple[list[dict], dict]:
+    stats = {
+        "record_type": "crawl_summary",
+        "source": "dcinside",
+        "collected_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "search_terms": list(SEARCH_TERMS),
+        "list_pages_planned": len(SEARCH_TERMS) * search_pages,
+        "list_pages_attempted": 0,
+        "list_pages_loaded": 0,
+        "list_pages_failed": 0,
+        "discovered_links": 0,
+        "detail_page_limit": max_articles,
+        "detail_pages_attempted": 0,
+        "detail_pages_saved": 0,
+        "detail_pages_failed": 0,
+    }
+
+    article_urls = get_dc_article_links(search_pages, stats)[:max_articles]
+    print(f"[DC 상세] {len(article_urls)}개 페이지 확인 시작")
     articles = []
-
-    for url in article_urls[:max_articles]:
+    for index, url in enumerate(article_urls, 1):
+        stats["detail_pages_attempted"] += 1
         article = parse_dc_article(url)
-        if article is not None:
-            articles.append(article)
+        if article is None:
+            stats["detail_pages_failed"] += 1
+            continue
+        articles.append(article)
+        if index % 25 == 0 or index == len(article_urls):
+            print(f"[DC 상세] {index}/{len(article_urls)} 확인, {len(articles)}건 저장")
 
-    return articles
+    stats["detail_pages_saved"] = len(articles)
+    return articles, stats
 
 
-def save_jsonl(path: str, rows: list[dict]) -> None:
-    with open(path, "w", encoding="utf-8") as handle:
+def save_jsonl(path: str, rows: list[dict], stats: dict) -> None:
+    if not rows:
+        raise RuntimeError("수집 결과가 0건이라 기존 파일을 덮어쓰지 않았습니다.")
+
+    output_path = Path(path)
+    temporary_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    with temporary_path.open("w", encoding="utf-8") as handle:
+        handle.write(json.dumps(stats, ensure_ascii=False) + "\n")
         for row in rows:
             handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+    temporary_path.replace(output_path)
+
+
+def print_stats(stats: dict) -> None:
+    print(
+        "DC 수집 완료 | "
+        f"목록 {stats['list_pages_loaded']}/{stats['list_pages_attempted']}페이지 | "
+        f"링크 {stats['discovered_links']}건 | "
+        f"상세 {stats['detail_pages_saved']}/{stats['detail_pages_attempted']}건 저장"
+    )
+
+
+def main() -> None:
+    rows, stats = collect_dc_articles()
+    save_jsonl("dc_wedding_posts.jsonl", rows, stats)
+    print_stats(stats)
 
 
 if __name__ == "__main__":
-    rows = collect_dc_articles(
-        max_pages=300,
-        max_articles=1500,
-    )
-    save_jsonl("dc_wedding_posts.jsonl", rows)
-    print(f"Saved {len(rows)} DC Inside articles")
+    main()
