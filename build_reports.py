@@ -35,6 +35,22 @@ ISSUE_DESCRIPTIONS = {
     "서비스 불편·품질 문제": "응대, 누락, 지연, 결과물과 재촬영 문제",
     "선택 피로·정보 부족": "업체 비교의 어려움과 준비 과정의 정보 부족",
 }
+RESEARCH_USE_LABELS = {
+    "core_problem": "핵심 불편·문제",
+    "planner_workflow": "웨딩 플래너 진행 과정",
+    "vendor_preference": "업체 선택 기준·후기",
+    "핵심 이슈": "핵심 불편·문제",
+    "웨딩 준비 사례": "웨딩 준비 과정",
+    "업체 선택 후기": "업체 선택 기준·후기",
+    "제외": "분석 제외",
+}
+RESEARCH_USE_DESCRIPTIONS = {
+    "핵심 불편·문제": "추가비용·계약·환불·품질처럼 해결이 필요한 문제",
+    "웨딩 플래너 진행 과정": "플래너 상담부터 일정 관리까지 실제로 진행한 과정",
+    "웨딩 준비 과정": "예식과 촬영 등을 준비하며 겪은 과정과 경험",
+    "업체 선택 기준·후기": "업체를 고른 이유와 이용 후 만족하거나 아쉬웠던 점",
+    "분석 제외": "구체적인 웨딩 준비 정보가 부족해 분석에서 뺀 글",
+}
 STOPWORDS = {
     "그리고", "그런데", "그래서", "그냥", "정말", "진짜", "너무", "저는", "제가",
     "저희", "우리", "이번", "이제", "후기", "결혼", "결혼식", "웨딩", "신부", "신랑",
@@ -120,6 +136,11 @@ def join_values(value) -> str:
     return str(value or "")
 
 
+def research_use_label(value: str) -> str:
+    value = str(value or "").strip()
+    return RESEARCH_USE_LABELS.get(value, value or "분류 없음")
+
+
 def preview(text: str, length: int = 190) -> str:
     text = re.sub(r"\s+", " ", text or "").strip()
     return text if len(text) <= length else text[:length].rstrip() + "…"
@@ -146,7 +167,7 @@ def write_csv(rows: list[dict], path: Path) -> None:
                 {
                     "출처": SOURCE_LABELS.get(row.get("source", ""), row.get("source", "")),
                     "포함여부": "포함" if row.get("keep") else "제외",
-                    "분류": row.get("research_use", ""),
+                    "분류": research_use_label(row.get("research_use", "")),
                     "서비스": join_values(row.get("service_categories", [])),
                     "이슈": join_values(row.get("issue_labels", [])),
                     "가격언급": join_values(row.get("price_mentions", [])),
@@ -271,6 +292,29 @@ def render_source_overview(rows: list[dict], raw_counts: Counter) -> str:
     return "".join(cards)
 
 
+def render_research_types(rows: list[dict]) -> str:
+    counts = Counter(
+        research_use_label(row.get("research_use", ""))
+        for row in rows
+        if row.get("keep")
+    )
+    if not counts:
+        return "<p class='empty'>분석에 포함된 글이 없습니다.</p>"
+
+    cards = []
+    for label, count in counts.most_common():
+        description = RESEARCH_USE_DESCRIPTIONS.get(
+            label, "웨딩 준비 글을 내용에 따라 묶은 분석 유형"
+        )
+        cards.append(
+            "<article class='type-card'>"
+            f"<div><strong>{escape(label)}</strong><span>{count}건</span></div>"
+            f"<p>{escape(description)}</p>"
+            "</article>"
+        )
+    return "".join(cards)
+
+
 def count_labels(rows: list[dict], field: str) -> dict[str, Counter]:
     counts: dict[str, Counter] = {}
     for row in rows:
@@ -373,7 +417,7 @@ def render_posts_table(rows: list[dict]) -> str:
         body_rows.append(
             f"<tr class='row-{source} {'included' if row.get('keep') else 'excluded'}'>"
             f"<td><span class='source-pill {source}'>{SOURCE_LABELS.get(source, source)}</span></td>"
-            f"<td><span class='state {state}'>{state}</span><br><small>{escape(row.get('research_use', ''))}</small></td>"
+            f"<td><span class='state {state}'>{state}</span><br><small>{escape(research_use_label(row.get('research_use', '')))}</small></td>"
             f"<td>{escape(join_values(row.get('service_categories', [])) or '—')}</td>"
             f"<td>{escape(join_values(row.get('issue_labels', [])) or '—')}</td>"
             f"<td class='post-title'><a href='{url}' target='_blank' rel='noreferrer'>{escape(row.get('title', ''))}</a></td>"
@@ -400,6 +444,7 @@ def render_html(
     audit = render_collection_audit(rows, raw_counts, duplicate_counts, metadata)
     scope_note = render_scope_note(metadata)
     sources = render_source_overview(rows, raw_counts)
+    research_types = render_research_types(rows)
     issue_distribution = render_distribution(rows, "issue_labels")
     service_distribution = render_distribution(rows, "service_categories")
     issue_cards = render_issue_cards(rows)
@@ -460,6 +505,12 @@ def render_html(
     .method strong {{ display: block; margin-bottom: 7px; }}
     .method p {{ margin: 0; color: var(--muted); font-size: 14px; line-height: 1.65; }}
     .source-grid, .chart-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }}
+    .type-summary {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 0 0 22px; }}
+    .type-card {{ padding: 17px 18px; border: 1px solid var(--line); border-radius: 16px; background: #f8f3e9; }}
+    .type-card > div {{ display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }}
+    .type-card strong {{ font-size: 15px; }}
+    .type-card span {{ color: var(--gold); font-size: 18px; font-weight: 900; white-space: nowrap; }}
+    .type-card p {{ margin: 9px 0 0; color: var(--muted); font-size: 12px; line-height: 1.55; }}
     .source-card {{ padding: 24px; border-radius: 20px; border-top: 5px solid; }}
     .source-card.dcinside {{ border-top-color: var(--dc); }}
     .source-card.kgwed {{ border-top-color: var(--kg); }}
@@ -515,14 +566,14 @@ def render_html(
     .empty {{ color: var(--muted); }}
     footer {{ padding: 20px 2px; color: var(--muted); font-size: 12px; line-height: 1.7; }}
     @media (max-width: 900px) {{
-      .metrics, .method {{ grid-template-columns: repeat(2, 1fr); }}
+      .metrics, .method, .type-summary {{ grid-template-columns: repeat(2, 1fr); }}
       .source-grid, .chart-grid, .issue-grid {{ grid-template-columns: 1fr; }}
       .keyword-grid {{ grid-template-columns: 1fr; }}
       nav {{ max-width: 100%; overflow-x: auto; }}
     }}
     @media (max-width: 560px) {{
       .page {{ width: min(100% - 22px, 1440px); padding-top: 30px; }}
-      .metrics, .method {{ grid-template-columns: 1fr 1fr; }}
+      .metrics, .method, .type-summary {{ grid-template-columns: 1fr; }}
       .metric {{ min-height: 128px; padding: 15px; }} .metric strong {{ font-size: 38px; }}
       .panel {{ padding: 17px; border-radius: 18px; }}
       .section-head {{ display: block; }} .section-head p {{ margin-top: 8px; }}
@@ -534,7 +585,7 @@ def render_html(
 <body>
   <main class="page">
     <header class="hero">
-      <p class="eyebrow">DCInside + KGWED · Combined Research Report</p>
+      <p class="eyebrow">DC인사이드 + 결직웨딩 · 통합 분석 보고서</p>
       <h1>웨딩 준비 후기에서<br>무엇이 반복됐나</h1>
       <p class="lead">DC인사이드와 결직웨딩의 저장된 상세 본문을 명시적인 한국어 규칙으로 다시 분류했습니다. 어떤 표현 때문에 어떤 이슈로 묶였는지 원문 링크와 함께 확인할 수 있습니다.</p>
       <span class="stamp">보고서 생성 {generated_at}</span>
@@ -547,7 +598,7 @@ def render_html(
       <div class="section-head"><h2>수집 검증</h2><p>‘본문 저장’은 목록 제목만 본 것이 아니라 상세 URL을 요청해 제목과 본문을 파싱한 건수입니다. 과거 저장본은 후보 링크와 실패 수를 남기지 않아 해당 값은 복원할 수 없습니다.</p></div>
       <div class="method">
         <article><strong>상세 페이지 진입</strong><p>두 크롤러 모두 목록에서 URL을 모은 뒤 각 게시글의 상세 페이지를 별도로 열어 본문 영역을 저장합니다.</p></article>
-        <article><strong>분석 포함 기준</strong><p>DC는 구체적인 웨딩 준비 맥락과 이슈가 함께 있어야 포함합니다. 결직은 이슈 글과 업체 선택 후기를 구분해 포함합니다.</p></article>
+        <article><strong>분석 포함 기준</strong><p>DC는 구체적인 웨딩 준비 맥락과 불편·문제가 함께 있어야 포함합니다. 결직은 불편·문제 글과 업체 선택 기준·후기를 구분해 포함합니다.</p></article>
         <article><strong>해석 시 주의</strong><p>결직은 업체 운영 후기 게시판이라 긍정 후기가 많습니다. 출처 성격을 일반 커뮤니티 의견과 동일하게 해석하면 안 됩니다.</p></article>
       </div>
       {audit}
@@ -556,6 +607,8 @@ def render_html(
 
     <section class="panel" id="overview">
       <div class="section-head"><h2>출처 비교</h2><p>각 출처에서 현재 규칙으로 분석에 포함된 글과 반복 이슈를 나란히 봅니다.</p></div>
+      <h3>분석 유형 한눈에 보기</h3>
+      <div class="type-summary">{research_types}</div>
       <div class="source-grid">{sources}</div>
       <div class="chart-grid" style="margin-top:14px">
         <article class="chart"><h3>이슈 분포</h3><div class="legend"><span><i class="dcinside"></i>DC인사이드</span><span><i class="kgwed"></i>결직웨딩</span></div>{issue_distribution}</article>
