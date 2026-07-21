@@ -18,6 +18,11 @@ STOPWORDS = {
     "보니", "보면", "한번", "하게", "되어", "가장", "더욱", "이때", "그때", "지금", "앞으로"
 }
 
+SITE_LABELS = {
+    "dcinside": "디시인사이드",
+    "kgwed": "결직웨딩",
+}
+
 
 def load_rows():
     rows = []
@@ -137,7 +142,7 @@ def write_csv(rows, path: Path):
             })
 
 
-def write_html(rows, path: Path):
+def write_html(rows, path: Path, title: str):
     source_counts = Counter(row.get("source", "unknown") for row in rows)
     research_use_counts = Counter(row.get("research_use", "exclude") for row in rows)
 
@@ -149,51 +154,96 @@ def write_html(rows, path: Path):
 
     rows_html = []
     for row in rows:
-        title = escape(row.get("title", ""))
+        title_text = escape(row.get("title", ""))
         evidence = escape(preview_text(" / ".join(row.get("evidence_sentences", []))))
         url = row.get("url", "")
         source = escape(row.get("source", ""))
         research_use = escape(row.get("research_use", ""))
         analysis_tier = escape(row.get("analysis_tier", ""))
         rows_html.append(
-            f"<tr><td>{source}</td><td>{research_use}</td><td>{analysis_tier}</td><td><a href='{escape(url)}' target='_blank'>{title}</a></td><td>{evidence}</td></tr>"
+            f"<tr><td>{source}</td><td>{research_use}</td><td>{analysis_tier}</td><td><a href='{escape(url)}' target='_blank'>{title_text}</a></td><td>{evidence}</td></tr>"
+        )
+
+    grouped = group_by_issue(rows)
+    issue_sections = []
+    for issue, group in sorted(grouped.items()):
+        direct_count = sum(1 for row in group if row.get("direct_experience"))
+        repost_count = sum(1 for row in group if row.get("is_repost"))
+        price_mentions = sorted({item for row in group for item in row.get("price_mentions", [])})
+        evidence_items = []
+        for row in group[:3]:
+            evidence_items.extend(row.get("evidence_sentences", []))
+        issue_sections.append(
+            "<section class='cluster'>"
+            f"<h3>{escape(issue)}</h3>"
+            f"<p>사례 수: {len(group)} | 직접 경험 수: {direct_count} | 재게시물 수: {repost_count}</p>"
+            f"<p>언급된 가격: {escape(', '.join(price_mentions))}</p>"
+            f"<ul>{''.join(f'<li>{escape(item)}</li>' for item in evidence_items[:5])}</ul>"
+            "</section>"
+        )
+
+    counter = Counter()
+    for row in rows:
+        evidence = " ".join(row.get("evidence_sentences", []))
+        counter.update(tokenize(evidence))
+
+    max_count = max(counter.values()) if counter else 1
+    keyword_items = []
+    for keyword, count in counter.most_common(30):
+        width = int(count / max_count * 100)
+        keyword_items.append(
+            f"<div class='row'><div class='label'>{escape(keyword)} ({count})</div><div class='bar'><div class='fill' style='width:{width}%'></div></div></div>"
         )
 
     html = f"""<!DOCTYPE html>
 <html lang='ko'>
 <head>
   <meta charset='utf-8' />
-  <title>웨딩 크롤링 결과 요약</title>
+  <title>{title}</title>
   <style>
     body {{ font-family: Arial, sans-serif; margin: 24px; color: #222; }}
     h1 {{ margin-bottom: 8px; }}
     .summary {{ display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }}
     .card {{ border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; min-width: 120px; }}
-    .links {{ margin-bottom: 16px; }}
     table {{ border-collapse: collapse; width: 100%; }}
     th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; vertical-align: top; }}
     th {{ background: #f7f7f7; }}
+    .cluster {{ border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 14px; }}
+    .row {{ margin-bottom: 10px; }}
+    .label {{ margin-bottom: 4px; font-weight: 600; }}
+    .bar {{ height: 12px; background: #eee; border-radius: 6px; overflow: hidden; }}
+    .fill {{ height: 100%; background: #1a73e8; }}
     a {{ color: #1a73e8; text-decoration: none; }}
   </style>
 </head>
 <body>
-  <h1>웨딩 크롤링 결과 요약</h1>
+  <h1>{title}</h1>
   <p>총 {len(rows)}건의 항목을 정리했습니다.</p>
-  <div class='links'>
-    <a href='issue_groups.html'>이슈 그룹 보기</a> |
-    <a href='keyword_frequency.html'>근거 문장 키워드 보기</a>
-  </div>
   <div class='summary'>
     {''.join(summary_cards)}
   </div>
-  <table>
-    <thead>
-      <tr><th>출처</th><th>연구용도</th><th>등급</th><th>제목</th><th>근거</th></tr>
-    </thead>
-    <tbody>
-      {''.join(rows_html)}
-    </tbody>
-  </table>
+
+  <section>
+    <h2>요약 테이블</h2>
+    <table>
+      <thead>
+        <tr><th>출처</th><th>연구용도</th><th>등급</th><th>제목</th><th>근거</th></tr>
+      </thead>
+      <tbody>
+        {''.join(rows_html)}
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>이슈 그룹</h2>
+    {''.join(issue_sections)}
+  </section>
+
+  <section>
+    <h2>키워드 빈도</h2>
+    {''.join(keyword_items)}
+  </section>
 </body>
 </html>
 """
@@ -202,11 +252,9 @@ def write_html(rows, path: Path):
 
 def group_by_issue(rows):
     grouped = {}
-
     for row in rows:
         for issue in row.get("issue_labels", []):
             grouped.setdefault(issue, []).append(row)
-
     return grouped
 
 
@@ -292,6 +340,17 @@ def write_keyword_frequency(rows, path: Path):
     path.write_text(html, encoding="utf-8")
 
 
+def build_site_reports(rows, output_dir: Path):
+    for source_name, display_name in SITE_LABELS.items():
+        site_rows = [row for row in rows if row.get("source") == source_name]
+        if not site_rows:
+            continue
+        write_csv(site_rows, output_dir / f"{source_name}_summary.csv")
+        write_html(site_rows, output_dir / f"{source_name}_summary.html", f"{display_name} 웨딩 문제 요약")
+        write_issue_groups(site_rows, output_dir / f"{source_name}_issue_groups.html")
+        write_keyword_frequency(site_rows, output_dir / f"{source_name}_keyword_frequency.html")
+
+
 def main():
     rows = load_rows()
     rows = deduplicate(rows)
@@ -316,15 +375,13 @@ def main():
     )
 
     write_csv(rows, OUTPUT_DIR / "wedding_crawling_summary.csv")
-    write_html(rows, OUTPUT_DIR / "wedding_crawling_summary.html")
-    write_issue_groups(rows, OUTPUT_DIR / "issue_groups.html")
-    write_keyword_frequency(rows, OUTPUT_DIR / "keyword_frequency.html")
+    write_html(rows, OUTPUT_DIR / "wedding_crawling_summary.html", "웨딩 문제 요약")
+    build_site_reports(rows, OUTPUT_DIR)
 
     print(f"Saved {len(rows)} rows to reports")
     print(f"CSV: {OUTPUT_DIR / 'wedding_crawling_summary.csv'}")
     print(f"HTML: {OUTPUT_DIR / 'wedding_crawling_summary.html'}")
-    print(f"Issues: {OUTPUT_DIR / 'issue_groups.html'}")
-    print(f"Keywords: {OUTPUT_DIR / 'keyword_frequency.html'}")
+    print("Site-specific reports: dcinside_summary.csv, kgwed_summary.csv")
 
 
 if __name__ == "__main__":

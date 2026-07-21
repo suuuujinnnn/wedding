@@ -158,17 +158,7 @@ def parse_kgwed_article(url: str) -> dict | None:
     if not title or len(body) < 30:
         return None
 
-    if title.strip().startswith("Re:"):
-        return None
-
-    if re.match(r"^Re:", body.strip()):
-        return None
-
-    if "상품권 증정 이벤트" in title:
-        return None
-
-    if "상품권 증정 이벤트" in body[:200]:
-        return None
+    html_excerpt = str(body_node)[:12000]
 
     uid = parse_qs(
         urlparse(url).query
@@ -185,6 +175,7 @@ def parse_kgwed_article(url: str) -> dict | None:
         "source_type": "vendor_review_board",
         "external_id": uid,
         "url": url,
+        "html_excerpt": html_excerpt,
         "content_hash": content_hash(
             analysis["title"]
             + analysis["body_clean"]
@@ -215,6 +206,9 @@ def save_jsonl(path: str, rows: list[dict]) -> None:
 
 
 if __name__ == "__main__":
-    rows = collect_kgwed_articles()
+    rows = collect_kgwed_articles(
+        max_pages=10,
+        max_articles=200,
+    )
     save_jsonl("kgwed_posts.jsonl", rows)
     print(f"Saved {len(rows)} KGWED articles")

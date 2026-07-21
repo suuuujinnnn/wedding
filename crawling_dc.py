@@ -10,7 +10,7 @@ from bs4 import BeautifulSoup
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from quality_rules import analyze_post, is_candidate_title
+from quality_rules import analyze_post
 
 
 USER_AGENT = (
@@ -85,7 +85,7 @@ def content_hash(text: str) -> str:
 
 
 def relevant_title(title: str) -> bool:
-    return is_candidate_title(title)
+    return bool(title.strip())
 
 
 def get_dc_article_links(max_pages: int = 30) -> list[str]:
@@ -131,14 +131,15 @@ def parse_dc_article(url: str) -> dict | None:
     if not title or len(body) < 20:
         return None
 
+    html_excerpt = ""
+    if body_node is not None:
+        html_excerpt = str(body_node)[:12000]
+
     analysis = analyze_post(
         title=title,
         body=body,
         source="dcinside",
     )
-
-    if not analysis["keep"]:
-        return None
 
     post_no = parse_qs(
         urlparse(url).query
@@ -149,6 +150,7 @@ def parse_dc_article(url: str) -> dict | None:
         "source_type": "community",
         "external_id": post_no,
         "url": url,
+        "html_excerpt": html_excerpt,
         "content_hash": content_hash(
             analysis["title"]
             + analysis["body_clean"]
@@ -177,6 +179,9 @@ def save_jsonl(path: str, rows: list[dict]) -> None:
 
 
 if __name__ == "__main__":
-    rows = collect_dc_articles()
+    rows = collect_dc_articles(
+        max_pages=50,
+        max_articles=300,
+    )
     save_jsonl("dc_wedding_posts.jsonl", rows)
     print(f"Saved {len(rows)} DC Inside articles")
