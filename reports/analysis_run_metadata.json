@@ -1,0 +1,32 @@
+{
+  "input_fields": {
+    "title": "title",
+    "clean_body": "body_clean (fallback: clean_body/body)",
+    "source": "source",
+    "url": "url",
+    "document_id": "external_id (fallback: post_id/id/content hash)",
+    "created_at": "created_at/date/written_at; current files do not provide it",
+    "cluster_id": "cluster_id; current files do not provide it"
+  },
+  "stats": {
+    "counts": {
+      "raw_posts": 242,
+      "duplicates": 2,
+      "excluded": 96,
+      "valid_documents": 144
+    },
+    "sources": {
+      "dcinside": 70,
+      "kgwed": 74
+    }
+  },
+  "warnings": [
+    "네이버 검색량 파일이 없어 결합 값은 비워 둡니다. --naver-keyword-file로 광고주센터 CSV/XLSX를 지정하세요."
+  ],
+  "interpretation_limits": [
+    "커뮤니티 언급률은 전체 예비부부의 비율이 아닙니다.",
+    "업체 운영 후기 게시판과 일반 커뮤니티의 성격이 다릅니다.",
+    "사람이 KWIC를 검수하기 전에는 후보를 확정 관심사로 해석하지 않습니다.",
+    "네이버 검색량은 인스타그램 내부 검색량이 아닙니다."
+  ]
+}

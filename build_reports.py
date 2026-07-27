@@ -41,6 +41,7 @@ RESEARCH_USE_LABELS = {
     "vendor_preference": "업체 선택 기준·후기",
     "핵심 이슈": "핵심 불편·문제",
     "웨딩 준비 사례": "웨딩 준비 과정",
+    "웨딩 비용·자금": "웨딩 비용·자금",
     "업체 선택 후기": "업체 선택 기준·후기",
     "제외": "분석 제외",
 }
@@ -48,6 +49,7 @@ RESEARCH_USE_DESCRIPTIONS = {
     "핵심 불편·문제": "추가비용·계약·환불·품질처럼 해결이 필요한 문제",
     "웨딩 플래너 진행 과정": "플래너 상담부터 일정 관리까지 실제로 진행한 과정",
     "웨딩 준비 과정": "예식과 촬영 등을 준비하며 겪은 과정과 경험",
+    "웨딩 비용·자금": "축의금, 예산, 자금 마련과 비용 분담에 관한 질문과 경험",
     "업체 선택 기준·후기": "업체를 고른 이유와 이용 후 만족하거나 아쉬웠던 점",
     "분석 제외": "구체적인 웨딩 준비 정보가 부족해 분석에서 뺀 글",
 }
@@ -112,7 +114,7 @@ def normalize_signature(text: str) -> str:
 def deduplicate(rows: list[dict]) -> tuple[list[dict], Counter]:
     unique_rows = []
     duplicate_counts = Counter()
-    seen = set()
+    seen: dict[tuple[str, str], int] = {}
 
     for row in rows:
         title = normalize_signature(row.get("title", ""))
@@ -122,9 +124,12 @@ def deduplicate(rows: list[dict]) -> tuple[list[dict], Counter]:
 
         if signature in seen:
             duplicate_counts[row.get("source", "")] += 1
+            existing_index = seen[signature]
+            if row.get("keep") and not unique_rows[existing_index].get("keep"):
+                unique_rows[existing_index] = row
             continue
 
-        seen.add(signature)
+        seen[signature] = len(unique_rows)
         unique_rows.append(row)
 
     return unique_rows, duplicate_counts
